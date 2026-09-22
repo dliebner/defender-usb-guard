@@ -396,7 +396,7 @@ $xaml = @"
 
 $Window = [Windows.Markup.XamlReader]::Parse($xaml)
 $ui = @{}
-foreach ($name in 'StatusText','CorePanel','SignatureText','PolicyWarning','SettingsPanel','BtnRecommended','BtnRefresh','BtnUndo','BtnApply',
+foreach ($name in 'Tabs','StatusText','CorePanel','SignatureText','PolicyWarning','SettingsPanel','BtnRecommended','BtnRefresh','BtnUndo','BtnApply',
                   'ActivityDays','BtnActivityRefresh','ActivityCount','ActivityGrid','ExclusionList','BtnExclAddFile','BtnExclAddFolder','BtnExclRemove') {
     $ui[$name] = $Window.FindName($name)
 }
