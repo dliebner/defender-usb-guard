@@ -3,6 +3,9 @@ name: Lint
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly: re-check the rule list against Microsoft's current docs
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -48,3 +51,11 @@ jobs:
           $errorCount = @($results | Where-Object Severity -eq 'Error').Count
           Write-Host "$($results.Count) finding(s), $errorCount error(s)"
           if ($errorCount -gt 0) { exit 1 }
+
+  docs-audit:
+    name: Cross-check ASR rules against Microsoft docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare GUIDs and Warn-mode support with the published ASR reference
+        run: python3 tools/check_asr_docs.py

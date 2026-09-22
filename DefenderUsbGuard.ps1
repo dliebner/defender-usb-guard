@@ -110,12 +110,12 @@ $SettingDefs = @(
        Category='Other low false-alarm protections'
        Name='Block credential stealing from LSASS'
        Description='Blocks tools that dump passwords from the Windows logon process.'
-       Options=$AsrOptions; Recommended='Block' }
+       Options=@('Off', 'Audit', 'Block'); Recommended='Block' }   # Defender does not support Warn for this rule
     @{ Key='asr_wmi'; Type='ASR'; Guid='e6db77e5-3df2-4cf1-b95a-636979351e5b'
        Category='Other low false-alarm protections'
        Name='Block persistence through WMI event subscription'
        Description='Blocks a stealthy technique malware uses to survive reboots.'
-       Options=@('Off', 'Audit', 'Block'); Recommended='Block' }   # Defender does not support Warn for this rule
+       Options=$AsrOptions; Recommended='Block' }
     @{ Key='asr_drivers'; Type='ASR'; Guid='56a863a9-875e-4185-98a7-b882c64b5ce5'
        Category='Other low false-alarm protections'
        Name='Block abuse of exploited vulnerable signed drivers'
@@ -146,9 +146,9 @@ $SettingDefs = @(
        Category='Microsoft Office and Adobe Reader'
        Name='Block Office applications from injecting code into other processes'
        Description='Stops macro malware from hiding inside other running programs.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
+       Options=@('Off', 'Audit', 'Block'); Recommended=$(if ($officeInstalled) { 'Block' } else { $null })   # Defender does not support Warn for this rule
        Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
-    @{ Key='asr_office_api'; Type='ASR'; Guid='92e97fa1-5d90-4c72-b1c2-b04d1b6ab7b7'
+    @{ Key='asr_office_api'; Type='ASR'; Guid='92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Win32 API calls from Office macros'
        Description='Blocks advanced macro attacks that call Windows directly.'
@@ -178,7 +178,7 @@ $AsrNames = @{
     'd4f940ab-401b-4efc-aadc-ad5f3c50688a' = 'Office child processes'
     '3b576869-a4ec-4529-8536-b80a7769e899' = 'Office executable content'
     '75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84' = 'Office code injection'
-    '92e97fa1-5d90-4c72-b1c2-b04d1b6ab7b7' = 'Win32 API calls from macros'
+    '92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b' = 'Win32 API calls from macros'
     '26190899-1602-49e8-8b27-eb1d0a1ce869' = 'Outlook child processes'
     '7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c' = 'Adobe Reader child processes'
     'd3e037e1-3eb8-44c8-a917-57927947596d' = 'JS/VBS launching downloaded executables'

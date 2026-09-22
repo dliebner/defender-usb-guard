@@ -30,7 +30,10 @@ home or small-office PC from infected removable media.
 
 ## Settings it can change
 
-The groups below match the groups in the script and in the window.
+The groups below match the groups in the script and in the window. The rule GUIDs and the Warn-mode
+support claims are checked automatically against Microsoft's published
+[Attack surface reduction rules reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference)
+by `tools/check_asr_docs.py`, which CI runs on every push and once a week.
 
 ### USB and removable media
 
@@ -45,8 +48,8 @@ The groups below match the groups in the script and in the window.
 | Setting | Options | Recommended | How it is set |
 |---|---|---|---|
 | Block executable content from email client and webmail (ASR rule `be9ba2d9-53ea-4cdc-84e5-9b1eeee46550`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
-| Block credential stealing from LSASS (ASR rule `9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
-| Block persistence through WMI event subscription (ASR rule `e6db77e5-3df2-4cf1-b95a-636979351e5b`) | Off, Audit, Block (Defender does not support Warn for this rule) | Block | `Add-MpPreference` (ASR) |
+| Block credential stealing from LSASS (ASR rule `9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2`) | Off, Audit, Block (Defender does not support Warn for this rule) | Block | `Add-MpPreference` (ASR) |
+| Block persistence through WMI event subscription (ASR rule `e6db77e5-3df2-4cf1-b95a-636979351e5b`; needs Windows 10 1903 or later) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
 | Block abuse of exploited vulnerable signed drivers (ASR rule `56a863a9-875e-4185-98a7-b882c64b5ce5`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
 | Potentially unwanted application (PUA) protection | Off, Audit, Block | Block | `Set-MpPreference -PUAProtection` |
 
@@ -61,8 +64,8 @@ for an absent application costs nothing, so one that is already on is never turn
 |---|---|---|---|
 | Block Office applications from creating child processes (ASR rule `d4f940ab-401b-4efc-aadc-ad5f3c50688a`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
 | Block Office applications from creating executable content (ASR rule `3b576869-a4ec-4529-8536-b80a7769e899`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
-| Block Office applications from injecting code into other processes (ASR rule `75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
-| Block Win32 API calls from Office macros (ASR rule `92e97fa1-5d90-4c72-b1c2-b04d1b6ab7b7`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Office applications from injecting code into other processes (ASR rule `75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84`) | Off, Audit, Block (Defender does not support Warn for this rule) | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Win32 API calls from Office macros (ASR rule `92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
 | Block Office communication apps (Outlook) from creating child processes (ASR rule `26190899-1602-49e8-8b27-eb1d0a1ce869`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
 | Block Adobe Reader from creating child processes (ASR rule `7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c`) | Off, Audit, Warn, Block | Block if Adobe Reader is installed, else no change | `Add-MpPreference` (ASR) |
 
