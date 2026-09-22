@@ -34,9 +34,11 @@ $isAdmin  = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administ
 $isSta    = [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA'
 if (-not $isAdmin -or -not $isSta) {
     $relaunchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
+    # Full path on purpose: a bare "powershell.exe" would be looked up in the current directory first.
+    $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     try {
-        if ($isAdmin) { Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunchArgs }
-        else          { Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunchArgs -Verb RunAs }
+        if ($isAdmin) { Start-Process -FilePath $psExe -ArgumentList $relaunchArgs }
+        else          { Start-Process -FilePath $psExe -ArgumentList $relaunchArgs -Verb RunAs }
     } catch {
         # Typically the user answered "No" to the UAC prompt. Say so; the console may be hidden.
         Add-Type -AssemblyName PresentationFramework
@@ -273,8 +275,24 @@ function Test-PolicyOverrides {
     return $found
 }
 
+function Protect-SnapshotDir {
+    # %ProgramData% lets any local user create files and folders, so restrict the snapshot folder to
+    # Administrators and SYSTEM. Applied on every save, so a folder that already existed (possibly created
+    # by another user) is corrected too, including its owner.
+    $admins = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $system = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)   # no inherited rules
+    foreach ($sid in $admins, $system) {
+        $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule ($sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+    }
+    $acl.SetOwner($admins)
+    Set-Acl -Path $SnapshotDir -AclObject $acl
+}
+
 function Save-Snapshot([string]$Reason) {
     New-Item -ItemType Directory -Force -Path $SnapshotDir | Out-Null
+    Protect-SnapshotDir
     $file = Join-Path $SnapshotDir ('snapshot-{0:yyyyMMdd-HHmmss}.json' -f (Get-Date))
     $data = [ordered]@{ Created = (Get-Date).ToString('o'); Reason = $Reason; Settings = [ordered]@{} }
     foreach ($row in $script:Rows) { $data.Settings[$row.Key] = $row.Current }

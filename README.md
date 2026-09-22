@@ -160,6 +160,10 @@ few others, and you want to read every line of what runs, use this.
 
 Keys are the `Key` values from `$SettingDefs`; values are the option names shown in the window.
 
+The snapshot folder is created with permissions that allow only Administrators and SYSTEM to write to
+it, and those permissions are re-applied on every save, so another local user cannot plant or replace
+snapshots. Undo also lists every change it is about to make and asks for confirmation.
+
 ## License
 
 [MIT](LICENSE)
