@@ -22,6 +22,8 @@
     Snapshots: %ProgramData%\DefenderUsbGuard\snapshots\
 #>
 
+param([switch]$Relaunched)   # passed by the self-elevation relaunch below; never set it by hand
+
 $ErrorActionPreference = 'Stop'
 $AppName     = 'Defender USB Guard'
 $AppDataDir  = Join-Path $env:ProgramData 'DefenderUsbGuard'
@@ -34,14 +36,15 @@ $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 $isAdmin  = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $isSta    = [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA'
 if (-not $isAdmin -or -not $isSta) {
-    if ($env:DUG_RELAUNCHED -eq '1') {
+    if ($Relaunched) {
         # We are the relaunched process and still not elevated (or not STA): do not relaunch again.
+        # (A switch parameter is used rather than an environment variable because an elevated launch
+        # does not reliably inherit the parent's environment.)
         Add-Type -AssemblyName PresentationFramework
         [void][Windows.MessageBox]::Show("$AppName relaunched itself to get administrator rights, but the new process is still not an administrator. Nothing was changed.`n`nTry right-clicking Launch.cmd and choosing 'Run as administrator'.", $AppName, 'OK', 'Error')
         exit 1
     }
-    $env:DUG_RELAUNCHED = '1'   # inherited by the child process
-    $relaunchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
+    $relaunchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Relaunched')
     # Full path on purpose: a bare "powershell.exe" would be looked up in the current directory first.
     $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     try {
@@ -98,7 +101,7 @@ $SettingDefs = @(
     @{ Key='autoplay'; Type='AutoPlay'
        Category='USB and removable media'
        Name='AutoPlay for all drives'
-       Description='Stops Windows from offering to run or open content automatically when a drive or device is inserted.'
+       Description='Stops Windows from offering to run or open content automatically when a drive with a letter (USB stick, memory card, CD/DVD) is inserted. Phones and cameras connected as media devices use a separate policy that this tool does not change.'
        Options=@('Windows default', 'Disabled'); Recommended='Disabled' }
 
     # --- Low false-alarm rules -------------------------------------------------------------
@@ -287,7 +290,16 @@ function Test-PolicyOverrides {
     return $found
 }
 
+function Assert-RealFolder([string]$Dir) {
+    # A junction or symbolic link here could redirect snapshots to a folder another user controls.
+    $item = Get-Item -LiteralPath $Dir -Force -ErrorAction SilentlyContinue
+    if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to use '$Dir': it is a junction or symbolic link, not a real folder. Remove it and try again."
+    }
+}
+
 function Protect-SnapshotDir {
+    foreach ($dir in $AppDataDir, $SnapshotDir) { Assert-RealFolder $dir }
     # %ProgramData% lets any local user create files and folders, so restrict our data folder
     # (%ProgramData%\DefenderUsbGuard) and the snapshots subfolder to Administrators and SYSTEM. Both
     # need their owner replaced, not just their rules: a folder's owner can always rewrite its DACL, and
@@ -304,6 +316,7 @@ function Protect-SnapshotDir {
 }
 
 function Save-Snapshot([string]$Reason) {
+    foreach ($dir in $AppDataDir, $SnapshotDir) { Assert-RealFolder $dir }   # before creating anything through a planted link
     New-Item -ItemType Directory -Force -Path $SnapshotDir | Out-Null
     Protect-SnapshotDir
     $file = Join-Path $SnapshotDir ('snapshot-{0:yyyyMMdd-HHmmss}.json' -f (Get-Date))
@@ -313,32 +326,55 @@ function Save-Snapshot([string]$Reason) {
     return $file
 }
 
+function Get-EventField($Message, [string]$Label) {
+    # Reads "<Label>: value" from the rendered message. The labels are localized, so this only works on
+    # English Windows; callers fall back to the raw event properties (see Get-DefenderActivity).
+    if ($Message -and $Message -match ('(?m)^\s*' + [regex]::Escape($Label) + ':\s*(.+?)\s*$')) { return $Matches[1] }
+    return ''
+}
+
 function Get-DefenderActivity([int]$Days) {
-    $filter = @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; Id = @(1116, 1117, 1121, 1122); StartTime = (Get-Date).AddDays(-$Days) }
+    # 1116/1117 malware detected / action taken, 1121/1122 ASR block / audit, 5007 Defender settings changed (by any tool).
+    $filter = @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; Id = @(1116, 1117, 1121, 1122, 5007); StartTime = (Get-Date).AddDays(-$Days) }
     $events = @(Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue)
+    $guidPattern = '^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$'
     foreach ($e in $events) {
+        # Each field is read from the message by label first (English), and failing that picked out of the
+        # raw event properties by its shape (a GUID, a path, a threat name), which works in any language.
+        $values = @($e.Properties | ForEach-Object { [string]$_.Value })
         $m = $e.Message
-        if (-not $m) { $m = (($e.Properties | ForEach-Object { $_.Value }) -join ' | ') }
+        if (-not $m) { $m = $values -join ' | ' }
+        $guids = @($values | Where-Object { $_ -match $guidPattern })
+        $paths = @($values | Where-Object { $_ -match '^(?:[A-Za-z]:\\|\\\\)' })
         $type = ''; $detail = ''; $path = ''; $extra = ''
         switch ($e.Id) {
             1121 { $type = 'ASR block' }
             1122 { $type = 'ASR audit' }
             1116 { $type = 'Malware detected' }
             1117 { $type = 'Action taken' }
+            5007 { $type = 'Settings changed' }
         }
         if ($e.Id -in @(1121, 1122)) {
-            if ($m -match 'ID:\s*\{?([0-9A-Fa-f-]{36})\}?') {
-                $g = $Matches[1].ToLower()
+            $g = Get-EventField $m 'ID'
+            if (-not $g -and $guids.Count -gt 0) { $g = $guids[0] }
+            if ($g) {
+                $g = $g.Trim('{}').ToLower()
                 $detail = if ($AsrNames.ContainsKey($g)) { $AsrNames[$g] } else { $g }
             }
-            if ($m -match '(?m)^\s*Path:\s*(.+?)\s*$')         { $path  = $Matches[1] }
-            if ($m -match '(?m)^\s*Process Name:\s*(.+?)\s*$') { $extra = $Matches[1] }
+            $path  = Get-EventField $m 'Path';         if (-not $path  -and $paths.Count -gt 0) { $path  = $paths[0] }
+            $extra = Get-EventField $m 'Process Name'; if (-not $extra -and $paths.Count -gt 1) { $extra = $paths[1] }
+        } elseif ($e.Id -eq 5007) {
+            $detail = Get-EventField $m 'New value'
+            $extra  = Get-EventField $m 'Old value'
+            if (-not $detail) { $detail = $values | Sort-Object Length -Descending | Select-Object -First 1 }
         } else {
-            if ($m -match '(?m)^\s*Name:\s*(.+?)\s*$')   { $detail = $Matches[1] }
-            if ($m -match '(?m)^\s*Path:\s*(.+?)\s*$')   { $path   = $Matches[1] }
-            if ($m -match '(?m)^\s*Action:\s*(.+?)\s*$') { $extra  = $Matches[1] }
+            $detail = Get-EventField $m 'Name'
+            if (-not $detail) { $detail = $values | Where-Object { $_ -match '^[A-Za-z]+:[^\s/\\]+/\S+' } | Select-Object -First 1 }   # e.g. Trojan:Win32/Wacatac.B!ml
+            $path = Get-EventField $m 'Path'
+            if (-not $path) { $path = $values | Where-Object { $_ -match '^(?:file|containerfile|process|webfile|amsi|regkey|behavior):_' -or $_ -match '^(?:[A-Za-z]:\\|\\\\)' } | Select-Object -First 1 }
+            $extra = Get-EventField $m 'Action'
         }
-        [pscustomobject]@{ Time = $e.TimeCreated; Type = $type; Detail = $detail; Path = $path; Extra = $extra; Message = $m }
+        [pscustomobject]@{ Time = $e.TimeCreated; Type = $type; Detail = [string]$detail; Path = [string]$path; Extra = [string]$extra; Message = $m }
     }
 }
 
@@ -598,6 +634,7 @@ function Invoke-Apply {
 
 function Invoke-Undo {
     if (-not (Test-Path $SnapshotDir)) { Show-Info 'No snapshots yet. A snapshot is saved every time you press Apply.'; return }
+    foreach ($dir in $AppDataDir, $SnapshotDir) { Assert-RealFolder $dir }
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
     $dlg.InitialDirectory = $SnapshotDir; $dlg.Filter = 'Snapshots (*.json)|*.json'; $dlg.Title = 'Choose a snapshot to restore'
     if ($dlg.ShowDialog($Window) -ne $true) { return }
@@ -622,6 +659,7 @@ function Invoke-Undo {
 function Refresh-Activity {
     $days = [int]$ui.ActivityDays.SelectedItem.Content
     Set-Status "Reading Defender event log ($days days)..."
+    $Window.Dispatcher.Invoke([Action]{}, [Windows.Threading.DispatcherPriority]::Render)   # let the status line paint first
     $table = New-Object System.Data.DataTable
     foreach ($col in 'Type', 'Detail', 'Path', 'Extra', 'Message') { [void]$table.Columns.Add($col, [string]) }
     [void]$table.Columns.Add('Time', [datetime])
