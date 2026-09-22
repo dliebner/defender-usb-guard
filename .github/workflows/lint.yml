@@ -1,0 +1,61 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly: re-check the rule list against Microsoft's current docs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Parse and analyze DefenderUsbGuard.ps1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tool targets Windows PowerShell 5.1, so parse it with that engine (not pwsh 7).
+      - name: Parse with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $file = "$PWD\DefenderUsbGuard.ps1"
+          $bytes = [IO.File]::ReadAllBytes($file)
+          $nonAscii = @($bytes | Where-Object { $_ -gt 127 })
+          if ($nonAscii.Count -gt 0) {
+            Write-Host "::error file=DefenderUsbGuard.ps1::File contains non-ASCII bytes; PowerShell 5.1 reads a BOM-less file as ANSI."
+            exit 1
+          }
+          $tokens = $null; $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors)
+          foreach ($e in $errors) {
+            Write-Host "::error file=DefenderUsbGuard.ps1,line=$($e.Extent.StartLineNumber)::$($e.Message)"
+          }
+          if ($errors.Count -gt 0) { exit 1 }
+          Write-Host "Parsed OK with Windows PowerShell $($PSVersionTable.PSVersion)"
+
+      - name: PSScriptAnalyzer
+        shell: powershell
+        run: |
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          }
+          $results = @(Invoke-ScriptAnalyzer -Path .\DefenderUsbGuard.ps1 -Severity Warning, Error)
+          $results | Format-Table Severity, Line, RuleName, Message -AutoSize | Out-String -Width 240 | Write-Host
+          foreach ($r in $results) {
+            $level = if ($r.Severity -eq 'Error') { 'error' } else { 'warning' }
+            Write-Host "::$level file=DefenderUsbGuard.ps1,line=$($r.Line)::$($r.RuleName): $($r.Message)"
+          }
+          $errorCount = @($results | Where-Object Severity -eq 'Error').Count
+          Write-Host "$($results.Count) finding(s), $errorCount error(s)"
+          if ($errorCount -gt 0) { exit 1 }
+
+  docs-audit:
+    name: Cross-check ASR rules against Microsoft docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare GUIDs and Warn-mode support with the published ASR reference
+        run: python3 tools/check_asr_docs.py

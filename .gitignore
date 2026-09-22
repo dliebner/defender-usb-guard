@@ -1,0 +1,15 @@
+# Runtime output (the tool itself writes snapshots to %ProgramData%, but keep local copies out too)
+snapshots/
+*.log
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
