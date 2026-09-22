@@ -79,6 +79,7 @@ function Test-AppInstalled([string[]]$ExeNames) {
 }
 $officeInstalled = Test-AppInstalled 'WINWORD.EXE', 'EXCEL.EXE', 'POWERPNT.EXE', 'OUTLOOK.EXE'
 $adobeInstalled  = Test-AppInstalled 'AcroRd32.exe', 'Acrobat.exe'
+$outlookInstalled = Test-AppInstalled 'OUTLOOK.EXE'
 
 $AsrOptions = @('Off', 'Audit', 'Warn', 'Block')
 
@@ -152,14 +153,14 @@ $SettingDefs = @(
        Category='Microsoft Office and Adobe Reader'
        Name='Block Win32 API calls from Office macros'
        Description='Blocks advanced macro attacks that call Windows directly.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
-       Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
+       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Audit' } else { $null })
+       Note=$(if ($officeInstalled) { 'Recommended in Audit first: this rule has a history of false positives and gives no notification when it blocks.' } else { 'Office not detected on this PC' }) }
     @{ Key='asr_outlook'; Type='ASR'; Guid='26190899-1602-49e8-8b27-eb1d0a1ce869'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Office communication apps (Outlook) from creating child processes'
        Description='Stops Outlook from launching other programs.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
-       Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
+       Options=$AsrOptions; Recommended=$(if ($outlookInstalled) { 'Block' } else { $null })
+       Note=$(if ($outlookInstalled) { '' } else { 'Outlook not detected on this PC' }) }
     @{ Key='asr_adobe'; Type='ASR'; Guid='7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Adobe Reader from creating child processes'
@@ -190,6 +191,8 @@ $AsrNames = @{
     'c0033c00-d16d-4114-a5a0-dc9b3a7d2ceb' = 'Copied/impersonated system tools'
     'a8f5898e-1dc8-49a9-9878-85004b8a61e6' = 'Webshell creation (servers)'
 }
+# The LSASS rule logs a large volume of harmless events (Microsoft's words), so the Activity tab hides it by default.
+$LsassRuleName = $AsrNames['9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2']
 
 # ---------------------------------------------------------------------------------------------
 # Read / write helpers
@@ -384,15 +387,17 @@ $xaml = @"
 
       <TabItem Header="  Activity  ">
         <DockPanel Margin="8">
-          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+          <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
             <TextBlock Text="Defender events from the last" VerticalAlignment="Center"/>
             <ComboBox x:Name="ActivityDays" Width="60" Margin="6,0" SelectedIndex="1">
               <ComboBoxItem Content="7"/><ComboBoxItem Content="30"/><ComboBoxItem Content="90"/>
             </ComboBox>
             <TextBlock Text="days" VerticalAlignment="Center"/>
             <Button x:Name="BtnActivityRefresh" Content="Refresh" Margin="12,0,0,0"/>
+            <ComboBox x:Name="ActivityRule" Width="230" Margin="12,0,0,0" VerticalAlignment="Center"/>
+            <CheckBox x:Name="ActivityHideLsass" Content="Hide LSASS events" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0"/>
             <TextBlock x:Name="ActivityCount" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="#666666"/>
-          </StackPanel>
+          </WrapPanel>
           <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" Foreground="#666666" Text="Hover a row for the full event text."/>
           <DataGrid x:Name="ActivityGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
                     GridLinesVisibility="Horizontal" CanUserAddRows="False" SelectionMode="Single" Background="White"
@@ -434,7 +439,7 @@ $xaml = @"
 $Window = [Windows.Markup.XamlReader]::Parse($xaml)
 $ui = @{}
 foreach ($name in 'Tabs','StatusText','CorePanel','SignatureText','PolicyWarning','SettingsPanel','BtnRecommended','BtnRefresh','BtnUndo','BtnApply',
-                  'ActivityDays','BtnActivityRefresh','ActivityCount','ActivityGrid','ExclusionList','BtnExclAddFile','BtnExclAddFolder','BtnExclRemove') {
+                  'ActivityDays','BtnActivityRefresh','ActivityCount','ActivityGrid','ActivityRule','ActivityHideLsass','ExclusionList','BtnExclAddFile','BtnExclAddFolder','BtnExclRemove') {
     $ui[$name] = $Window.FindName($name)
 }
 
@@ -480,7 +485,7 @@ function New-SettingRow($Def) {
     $left = New-Object Windows.Controls.StackPanel
     [void]$left.Children.Add((New-Text $Def.Name -Bold))
     [void]$left.Children.Add((New-Text $Def.Description -Wrap -Color '#555555' -Size 12))
-    if ($Def.Note) { [void]$left.Children.Add((New-Text $Def.Note -Color '#8A6D00' -Size 12)) }
+    if ($Def.Note) { [void]$left.Children.Add((New-Text $Def.Note -Wrap -Color '#8A6D00' -Size 12)) }
     [Windows.Controls.Grid]::SetColumn($left, 0)
 
     $mid = New-Object Windows.Controls.StackPanel
@@ -620,15 +625,40 @@ function Refresh-Activity {
     $table = New-Object System.Data.DataTable
     foreach ($col in 'Type', 'Detail', 'Path', 'Extra', 'Message') { [void]$table.Columns.Add($col, [string]) }
     [void]$table.Columns.Add('Time', [datetime])
-    $count = 0
     foreach ($ev in @(Get-DefenderActivity $days)) {
         $r = $table.NewRow()
         $r.Time = $ev.Time; $r.Type = $ev.Type; $r.Detail = $ev.Detail; $r.Path = $ev.Path; $r.Extra = $ev.Extra; $r.Message = $ev.Message
-        $table.Rows.Add($r); $count++
+        $table.Rows.Add($r)
     }
+    $script:ActivityTable = $table
     $ui.ActivityGrid.ItemsSource = $table.DefaultView
-    $ui.ActivityCount.Text = if ($count -eq 0) { 'No ASR or malware events in this period.' } else { "$count event(s)" }
+
+    # Rule filter: "All events" plus each rule name seen in the loaded ASR events. Keep the previous choice if still present.
+    $previous = [string]$ui.ActivityRule.SelectedItem
+    $ui.ActivityRule.Items.Clear()
+    [void]$ui.ActivityRule.Items.Add('All events')
+    foreach ($name in @($table.Rows | Where-Object { $_.Type -like 'ASR*' -and $_.Detail } | ForEach-Object { $_.Detail } | Sort-Object -Unique)) {
+        [void]$ui.ActivityRule.Items.Add($name)
+    }
+    $ui.ActivityRule.SelectedItem = if ($ui.ActivityRule.Items.Contains($previous)) { $previous } else { 'All events' }
+    Update-ActivityFilter
     Set-Status 'Activity refreshed.'
+}
+
+function Update-ActivityFilter {
+    # Filters the already-loaded table (no event log re-read) and keeps the count text accurate for what is shown.
+    $table = $script:ActivityTable
+    if ($null -eq $table) { return }
+    $clauses = @()
+    $rule = [string]$ui.ActivityRule.SelectedItem
+    if ($rule -and $rule -ne 'All events') { $clauses += "Type LIKE 'ASR*' AND Detail = '{0}'" -f $rule.Replace("'", "''") }
+    if ($ui.ActivityHideLsass.IsChecked)   { $clauses += "Detail <> '{0}'" -f $LsassRuleName.Replace("'", "''") }
+    $table.DefaultView.RowFilter = ($clauses -join ' AND ')
+    $shown = $table.DefaultView.Count
+    $total = $table.Rows.Count
+    $ui.ActivityCount.Text = if ($total -eq 0) { 'No ASR or malware events in this period.' }
+                             elseif ($shown -eq $total) { "$total event(s)" }
+                             else { "$shown of $total event(s) shown" }
 }
 
 function Refresh-Exclusions {
@@ -652,6 +682,8 @@ $ui.BtnRecommended.Add_Click({ foreach ($row in $script:Rows) { if ($row.Def.Rec
 $ui.BtnApply.Add_Click({ try { Invoke-Apply } catch { Show-Error $_.Exception.Message } })
 $ui.BtnUndo.Add_Click({ try { Invoke-Undo } catch { Show-Error $_.Exception.Message } })
 $ui.BtnActivityRefresh.Add_Click({ try { Refresh-Activity } catch { Show-Error $_.Exception.Message } })
+$ui.ActivityRule.Add_SelectionChanged({ try { Update-ActivityFilter } catch { Show-Error $_.Exception.Message } })
+$ui.ActivityHideLsass.Add_Click({ try { Update-ActivityFilter } catch { Show-Error $_.Exception.Message } })
 $ui.BtnExclAddFile.Add_Click({
     try {
         $dlg = New-Object Microsoft.Win32.OpenFileDialog

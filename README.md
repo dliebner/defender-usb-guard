@@ -53,20 +53,30 @@ by `tools/check_asr_docs.py`, which CI runs on every push and once a week.
 | Block abuse of exploited vulnerable signed drivers (ASR rule `56a863a9-875e-4185-98a7-b882c64b5ce5`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
 | Potentially unwanted application (PUA) protection | Off, Audit, Block | Block | `Set-MpPreference -PUAProtection` |
 
+New Windows 11 installations (version 22H2 and later, on hardware that meets Microsoft's criteria)
+enable LSA Protection by default, and Microsoft says the LSASS rule adds nothing where LSA Protection
+is on. The rule still matters on Windows 10 and on systems upgraded from it. It also logs a large
+volume of harmless events, which is why the Activity tab hides them by default.
+
 ### Microsoft Office and Adobe Reader
 
 These rules only matter if the application is installed. The script checks the registry App Paths for
-Word, Excel, PowerPoint, Outlook and Adobe Reader/Acrobat; if the application is not found there is
-no recommendation, the row says so, and **Set all to recommended** leaves that row unchanged. A rule
-for an absent application costs nothing, so one that is already on is never turned off by the button.
+Word, Excel, PowerPoint and Outlook (the Office rules), for Outlook alone (the Outlook rule) and for
+Adobe Reader/Acrobat; if the application is not found there is no recommendation, the row says so, and
+**Set all to recommended** leaves that row unchanged. A rule for an absent application costs nothing,
+so one that is already on is never turned off by the button.
+
+Microsoft enforces the Office child-process, code-injection and Outlook rules only when Office is
+installed under `%ProgramFiles%` or `%ProgramFiles(x86)%`. A Microsoft Store install of Office gets
+neither protection nor false alarms from those three rules.
 
 | Setting | Options | Recommended | How it is set |
 |---|---|---|---|
 | Block Office applications from creating child processes (ASR rule `d4f940ab-401b-4efc-aadc-ad5f3c50688a`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
 | Block Office applications from creating executable content (ASR rule `3b576869-a4ec-4529-8536-b80a7769e899`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
 | Block Office applications from injecting code into other processes (ASR rule `75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84`) | Off, Audit, Block (Defender does not support Warn for this rule) | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
-| Block Win32 API calls from Office macros (ASR rule `92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
-| Block Office communication apps (Outlook) from creating child processes (ASR rule `26190899-1602-49e8-8b27-eb1d0a1ce869`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Win32 API calls from Office macros (ASR rule `92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b`) | Off, Audit, Warn, Block | Audit if Office is installed, else no change (history of false positives; no notification when it blocks) | `Add-MpPreference` (ASR) |
+| Block Office communication apps (Outlook) from creating child processes (ASR rule `26190899-1602-49e8-8b27-eb1d0a1ce869`) | Off, Audit, Warn, Block | Block if Outlook is installed, else no change | `Add-MpPreference` (ASR) |
 | Block Adobe Reader from creating child processes (ASR rule `7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c`) | Off, Audit, Warn, Block | Block if Adobe Reader is installed, else no change | `Add-MpPreference` (ASR) |
 
 ### Exclusions tab
@@ -81,7 +91,8 @@ legitimate program you run from a USB drive is blocked by a rule.
 The **Settings** tab also shows, for reference only, whether real-time protection, behaviour monitoring,
 download/attachment scanning, script scanning, cloud-delivered protection and Tamper Protection are on,
 plus the security intelligence version. The tool never changes these. The **Activity** tab lists ASR
-block/audit events and malware detections from the Defender event log for the last 7, 30 or 90 days.
+block/audit events and malware detections from the Defender event log for the last 7, 30 or 90 days,
+with a per-rule filter and a "Hide LSASS events" box that is checked by default.
 
 ## What it deliberately does not do
 
