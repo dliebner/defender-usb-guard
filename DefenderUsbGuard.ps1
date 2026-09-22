@@ -34,8 +34,15 @@ $isAdmin  = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administ
 $isSta    = [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA'
 if (-not $isAdmin -or -not $isSta) {
     $relaunchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
-    if ($isAdmin) { Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunchArgs }
-    else          { Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunchArgs -Verb RunAs }
+    try {
+        if ($isAdmin) { Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunchArgs }
+        else          { Start-Process -FilePath 'powershell.exe' -ArgumentList $relaunchArgs -Verb RunAs }
+    } catch {
+        # Typically the user answered "No" to the UAC prompt. Say so; the console may be hidden.
+        Add-Type -AssemblyName PresentationFramework
+        [void][Windows.MessageBox]::Show("$AppName needs administrator rights and was not allowed to start elevated. Nothing was changed.`n`n$($_.Exception.Message)", $AppName, 'OK', 'Error')
+        exit 1
+    }
     exit
 }
 
@@ -98,7 +105,7 @@ $SettingDefs = @(
        Category='Other low false-alarm protections'
        Name='Block persistence through WMI event subscription'
        Description='Blocks a stealthy technique malware uses to survive reboots.'
-       Options=$AsrOptions; Recommended='Block' }
+       Options=@('Off', 'Audit', 'Block'); Recommended='Block' }   # Defender does not support Warn for this rule
     @{ Key='asr_drivers'; Type='ASR'; Guid='56a863a9-875e-4185-98a7-b882c64b5ce5'
        Category='Other low false-alarm protections'
        Name='Block abuse of exploited vulnerable signed drivers'
@@ -111,41 +118,43 @@ $SettingDefs = @(
        Options=@('Off', 'Audit', 'Block'); Recommended='Block' }
 
     # --- Office / Adobe Reader (only useful if installed) ----------------------------------
+    # When the application is not detected there is no recommendation (Recommended = $null):
+    # "Set all to recommended" leaves the row as it is rather than turning off a rule that costs nothing.
     @{ Key='asr_office_child'; Type='ASR'; Guid='d4f940ab-401b-4efc-aadc-ad5f3c50688a'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Office applications from creating child processes'
        Description='Stops macros from launching PowerShell, cmd and other programs.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { 'Off' })
+       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
        Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
     @{ Key='asr_office_exec'; Type='ASR'; Guid='3b576869-a4ec-4529-8536-b80a7769e899'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Office applications from creating executable content'
        Description='Stops macros from writing .exe, .dll and script files to disk.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { 'Off' })
+       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
        Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
     @{ Key='asr_office_inject'; Type='ASR'; Guid='75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Office applications from injecting code into other processes'
        Description='Stops macro malware from hiding inside other running programs.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { 'Off' })
+       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
        Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
     @{ Key='asr_office_api'; Type='ASR'; Guid='92e97fa1-5d90-4c72-b1c2-b04d1b6ab7b7'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Win32 API calls from Office macros'
        Description='Blocks advanced macro attacks that call Windows directly.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { 'Off' })
+       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
        Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
     @{ Key='asr_outlook'; Type='ASR'; Guid='26190899-1602-49e8-8b27-eb1d0a1ce869'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Office communication apps (Outlook) from creating child processes'
        Description='Stops Outlook from launching other programs.'
-       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { 'Off' })
+       Options=$AsrOptions; Recommended=$(if ($officeInstalled) { 'Block' } else { $null })
        Note=$(if ($officeInstalled) { '' } else { 'Office not detected on this PC' }) }
     @{ Key='asr_adobe'; Type='ASR'; Guid='7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c'
        Category='Microsoft Office and Adobe Reader'
        Name='Block Adobe Reader from creating child processes'
        Description='Stops malicious PDFs from launching other programs.'
-       Options=$AsrOptions; Recommended=$(if ($adobeInstalled) { 'Block' } else { 'Off' })
+       Options=$AsrOptions; Recommended=$(if ($adobeInstalled) { 'Block' } else { $null })
        Note=$(if ($adobeInstalled) { '' } else { 'Adobe Reader not detected on this PC' }) }
 )
 
@@ -175,7 +184,7 @@ $AsrNames = @{
 # ---------------------------------------------------------------------------------------------
 # Read / write helpers
 # ---------------------------------------------------------------------------------------------
-$AsrActionName = @{ 0 = 'Off'; 1 = 'Block'; 2 = 'Audit'; 6 = 'Warn' }
+$AsrActionName = @{ 0 = 'Off'; 1 = 'Block'; 2 = 'Audit'; 5 = 'Off'; 6 = 'Warn' }   # 5 = NotConfigured, same effect as Off
 $AsrActionArg  = @{ 'Off' = 'Disabled'; 'Block' = 'Enabled'; 'Audit' = 'AuditMode'; 'Warn' = 'Warn' }
 $PuaArg        = @{ 'Off' = 'Disabled'; 'Block' = 'Enabled'; 'Audit' = 'AuditMode' }
 $AutoPlayKey   = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
@@ -184,7 +193,7 @@ function Get-AsrState([string]$Guid, $Pref) {
     $ids     = @($Pref.AttackSurfaceReductionRules_Ids)
     $actions = @($Pref.AttackSurfaceReductionRules_Actions)
     for ($i = 0; $i -lt $ids.Count; $i++) {
-        if ($ids[$i] -and ($ids[$i].ToString().ToLower() -eq $Guid.ToLower())) {
+        if ($ids[$i] -and ([string]$ids[$i] -eq $Guid)) {
             $a = [int]$actions[$i]
             if ($AsrActionName.ContainsKey($a)) { return $AsrActionName[$a] } else { return "Unknown($a)" }
         }
@@ -232,16 +241,15 @@ function Set-SettingValue($Def, [string]$Value) {
     }
 }
 
-function Get-CoreStatus {
+function Get-CoreStatus($Pref) {
     $s = Get-MpComputerStatus
-    $p = Get-MpPreference
     [pscustomobject]@{
         Items = @(
             @{ Name = 'Real-time protection';    Ok = [bool]$s.RealTimeProtectionEnabled }
             @{ Name = 'Behavior monitoring';     Ok = [bool]$s.BehaviorMonitorEnabled }
             @{ Name = 'Download/attachment scan'; Ok = [bool]$s.IoavProtectionEnabled }
-            @{ Name = 'Script scanning';         Ok = (-not [bool]$p.DisableScriptScanning) }
-            @{ Name = 'Cloud-delivered protection'; Ok = ([int]$p.MAPSReporting -ne 0) }
+            @{ Name = 'Script scanning';         Ok = (-not [bool]$Pref.DisableScriptScanning) }
+            @{ Name = 'Cloud-delivered protection'; Ok = ([int]$Pref.MAPSReporting -ne 0) }
             @{ Name = 'Tamper Protection';       Ok = [bool]$s.IsTamperProtected }
         )
         SignatureVersion = $s.AntivirusSignatureVersion
@@ -251,7 +259,8 @@ function Get-CoreStatus {
 
 function Test-PolicyOverrides {
     # Values under the Policies hive (Group Policy or other tools) override Set-MpPreference silently.
-    $keys = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\ASR\Rules',
+    $keys = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender',
+            'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\ASR\Rules',
             'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Scan',
             'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine'
     $found = @()
@@ -459,7 +468,7 @@ function New-SettingRow($Def) {
     $combo = New-Object Windows.Controls.ComboBox
     foreach ($o in $Def.Options) { [void]$combo.Items.Add($o) }
     [void]$right.Children.Add($combo)
-    [void]$right.Children.Add((New-Text "Recommended: $($Def.Recommended)" -Color '#888888' -Size 11))
+    [void]$right.Children.Add((New-Text $(if ($Def.Recommended) { "Recommended: $($Def.Recommended)" } else { 'Recommended: no change' }) -Color '#888888' -Size 11))
     [Windows.Controls.Grid]::SetColumn($right, 2)
 
     [void]$grid.Children.Add($left); [void]$grid.Children.Add($mid); [void]$grid.Children.Add($right)
@@ -487,19 +496,19 @@ foreach ($category in ($SettingDefs | ForEach-Object { $_.Category } | Select-Ob
 # ---------------------------------------------------------------------------------------------
 # Actions
 # ---------------------------------------------------------------------------------------------
-function Refresh-Settings {
+function Refresh-Settings([switch]$KeepDesired) {
     $pref = Get-MpPreference
     foreach ($row in $script:Rows) {
         $v = Get-SettingValue $row.Def $pref
         $row.Current = $v
         $row.CurrentText.Text = $v
         if (-not $row.Combo.Items.Contains($v)) { [void]$row.Combo.Items.Add($v) }
-        $row.Combo.SelectedItem = $v
+        if (-not $KeepDesired) { $row.Combo.SelectedItem = $v }
         Update-RowHighlight $row
     }
 
     $ui.CorePanel.Children.Clear()
-    $core = Get-CoreStatus
+    $core = Get-CoreStatus $pref
     foreach ($item in $core.Items) {
         $tb = New-Text (('{0} {1}' -f $(if ($item.Ok) { [char]0x25CF } else { [char]0x25CB }), $item.Name)) -Color $(if ($item.Ok) { '#1B7F3B' } else { '#B00020' })
         $tb.Margin = T 0 0 16 2
@@ -517,32 +526,41 @@ function Refresh-Settings {
     }
 }
 
-function Invoke-Apply {
-    $changes = @($script:Rows | Where-Object { $_.Combo.SelectedItem -ne $_.Current })
-    if ($changes.Count -eq 0) { Show-Info 'No changes to apply. Change a "Desired" value first.'; return }
-
-    $list = ($changes | ForEach-Object { '  - {0}: {1}  ->  {2}' -f $_.Def.Name, $_.Current, $_.Combo.SelectedItem }) -join "`n"
-    $answer = [Windows.MessageBox]::Show($Window, "The following settings will change:`n`n$list`n`nA snapshot of the current settings will be saved first so this can be undone.`n`nContinue?", $AppName, 'YesNo', 'Question')
-    if ($answer -ne 'Yes') { Set-Status 'Apply cancelled.'; return }
-
-    $intended = @{}
-    foreach ($c in $changes) { $intended[$c.Key] = [string]$c.Combo.SelectedItem }
-    $snapshot = Save-Snapshot 'Before Apply'
-
+# Shared by Apply and Undo: snapshot, apply each change, re-read, and report errors and values that did not take.
+# $Changes is a list of objects with Row (a settings row) and Value (the option name to set). Returns the number applied without error.
+function Invoke-Changes($Changes, [string]$SnapshotReason, [string]$Verb) {
+    $snapshot = Save-Snapshot $SnapshotReason
     $errors = @()
-    foreach ($c in $changes) {
-        try { Set-SettingValue $c.Def $intended[$c.Key] }
-        catch { $errors += ('{0}: {1}' -f $c.Def.Name, $_.Exception.Message) }
+    foreach ($c in $Changes) {
+        try { Set-SettingValue $c.Row.Def $c.Value }
+        catch { $errors += ('{0}: {1}' -f $c.Row.Def.Name, $_.Exception.Message) }
     }
 
     Refresh-Settings
-    $notTaken = @($script:Rows | Where-Object { $intended.ContainsKey($_.Key) -and $_.Current -ne $intended[$_.Key] } | ForEach-Object { '  - {0} (still "{1}")' -f $_.Def.Name, $_.Current })
+    $notTaken = @($Changes | Where-Object { $_.Row.Current -ne $_.Value } | ForEach-Object { '  - {0} (still "{1}")' -f $_.Row.Def.Name, $_.Row.Current })
 
-    $msg = "Applied {0} change(s).`nSnapshot saved to:`n{1}" -f ($changes.Count - $errors.Count), $snapshot
+    $msg = "{0} {1} setting(s).`nSnapshot saved to:`n{2}" -f $Verb, ($Changes.Count - $errors.Count), $snapshot
     if ($errors.Count -gt 0)   { $msg += "`n`nErrors:`n" + ($errors -join "`n") }
     if ($notTaken.Count -gt 0) { $msg += "`n`nThese did not take effect (a policy may be overriding them):`n" + ($notTaken -join "`n") }
     if ($errors.Count -gt 0 -or $notTaken.Count -gt 0) { Show-Error $msg } else { Show-Info $msg }
-    Set-Status ('Applied {0} change(s) at {1:t}.' -f ($changes.Count - $errors.Count), (Get-Date))
+    return ($Changes.Count - $errors.Count)
+}
+
+function Format-ChangeList($Changes) {
+    return ($Changes | ForEach-Object { '  - {0}: {1}  ->  {2}' -f $_.Row.Def.Name, $_.Row.Current, $_.Value }) -join "`n"
+}
+
+function Invoke-Apply {
+    Refresh-Settings -KeepDesired   # fresh "current" values, so the change list and snapshot are accurate
+    $changes = @($script:Rows | Where-Object { $_.Combo.SelectedItem -ne $_.Current } | ForEach-Object { [pscustomobject]@{ Row = $_; Value = [string]$_.Combo.SelectedItem } })
+    if ($changes.Count -eq 0) { Show-Info 'No changes to apply. Change a "Desired" value first.'; return }
+
+    $list = Format-ChangeList $changes
+    $answer = [Windows.MessageBox]::Show($Window, "The following settings will change:`n`n$list`n`nA snapshot of the current settings will be saved first so this can be undone.`n`nContinue?", $AppName, 'YesNo', 'Question')
+    if ($answer -ne 'Yes') { Set-Status 'Apply cancelled.'; return }
+
+    $applied = Invoke-Changes $changes 'Before Apply' 'Applied'
+    Set-Status ('Applied {0} change(s) at {1:t}.' -f $applied, (Get-Date))
 }
 
 function Invoke-Undo {
@@ -551,6 +569,7 @@ function Invoke-Undo {
     $dlg.InitialDirectory = $SnapshotDir; $dlg.Filter = 'Snapshots (*.json)|*.json'; $dlg.Title = 'Choose a snapshot to restore'
     if ($dlg.ShowDialog($Window) -ne $true) { return }
 
+    Refresh-Settings -KeepDesired
     $snap = Get-Content -Path $dlg.FileName -Raw | ConvertFrom-Json
     $changes = @()
     foreach ($prop in $snap.Settings.PSObject.Properties) {
@@ -559,18 +578,11 @@ function Invoke-Undo {
     }
     if ($changes.Count -eq 0) { Show-Info 'Current settings already match that snapshot.'; return }
 
-    $list = ($changes | ForEach-Object { '  - {0}: {1}  ->  {2}' -f $_.Row.Def.Name, $_.Row.Current, $_.Value }) -join "`n"
+    $list = Format-ChangeList $changes
     $answer = [Windows.MessageBox]::Show($Window, "Restore snapshot from $($snap.Created)?`n`n$list`n`nA snapshot of the current settings will be saved first.", $AppName, 'YesNo', 'Question')
     if ($answer -ne 'Yes') { return }
 
-    [void](Save-Snapshot 'Before Undo')
-    $errors = @()
-    foreach ($c in $changes) {
-        try { Set-SettingValue $c.Row.Def $c.Value }
-        catch { $errors += ('{0}: {1}' -f $c.Row.Def.Name, $_.Exception.Message) }
-    }
-    Refresh-Settings
-    if ($errors.Count -gt 0) { Show-Error ("Restored with errors:`n" + ($errors -join "`n")) } else { Show-Info ('Restored {0} setting(s).' -f $changes.Count) }
+    [void](Invoke-Changes $changes 'Before Undo' 'Restored')
     Set-Status 'Snapshot restored.'
 }
 
@@ -608,7 +620,7 @@ function Add-Exclusion([string]$Path) {
 # Wire up events
 # ---------------------------------------------------------------------------------------------
 $ui.BtnRefresh.Add_Click({ try { Refresh-Settings; Set-Status 'Settings refreshed.' } catch { Show-Error $_.Exception.Message } })
-$ui.BtnRecommended.Add_Click({ foreach ($row in $script:Rows) { $row.Combo.SelectedItem = $row.Def.Recommended }; Set-Status 'Recommended values selected. Press Apply to make the changes.' })
+$ui.BtnRecommended.Add_Click({ foreach ($row in $script:Rows) { if ($row.Def.Recommended) { $row.Combo.SelectedItem = $row.Def.Recommended } }; Set-Status 'Recommended values selected. Press Apply to make the changes.' })
 $ui.BtnApply.Add_Click({ try { Invoke-Apply } catch { Show-Error $_.Exception.Message } })
 $ui.BtnUndo.Add_Click({ try { Invoke-Undo } catch { Show-Error $_.Exception.Message } })
 $ui.BtnActivityRefresh.Add_Click({ try { Refresh-Activity } catch { Show-Error $_.Exception.Message } })

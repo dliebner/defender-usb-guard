@@ -46,24 +46,25 @@ The groups below match the groups in the script and in the window.
 |---|---|---|---|
 | Block executable content from email client and webmail (ASR rule `be9ba2d9-53ea-4cdc-84e5-9b1eeee46550`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
 | Block credential stealing from LSASS (ASR rule `9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
-| Block persistence through WMI event subscription (ASR rule `e6db77e5-3df2-4cf1-b95a-636979351e5b`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
+| Block persistence through WMI event subscription (ASR rule `e6db77e5-3df2-4cf1-b95a-636979351e5b`) | Off, Audit, Block (Defender does not support Warn for this rule) | Block | `Add-MpPreference` (ASR) |
 | Block abuse of exploited vulnerable signed drivers (ASR rule `56a863a9-875e-4185-98a7-b882c64b5ce5`) | Off, Audit, Warn, Block | Block | `Add-MpPreference` (ASR) |
 | Potentially unwanted application (PUA) protection | Off, Audit, Block | Block | `Set-MpPreference -PUAProtection` |
 
 ### Microsoft Office and Adobe Reader
 
 These rules only matter if the application is installed. The script checks the registry App Paths for
-Word, Excel, PowerPoint, Outlook and Adobe Reader/Acrobat; if the application is not found the
-recommended value is **Off** and the row says so.
+Word, Excel, PowerPoint, Outlook and Adobe Reader/Acrobat; if the application is not found there is
+no recommendation, the row says so, and **Set all to recommended** leaves that row unchanged. A rule
+for an absent application costs nothing, so one that is already on is never turned off by the button.
 
 | Setting | Options | Recommended | How it is set |
 |---|---|---|---|
-| Block Office applications from creating child processes (ASR rule `d4f940ab-401b-4efc-aadc-ad5f3c50688a`) | Off, Audit, Warn, Block | Block if Office is installed, else Off | `Add-MpPreference` (ASR) |
-| Block Office applications from creating executable content (ASR rule `3b576869-a4ec-4529-8536-b80a7769e899`) | Off, Audit, Warn, Block | Block if Office is installed, else Off | `Add-MpPreference` (ASR) |
-| Block Office applications from injecting code into other processes (ASR rule `75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84`) | Off, Audit, Warn, Block | Block if Office is installed, else Off | `Add-MpPreference` (ASR) |
-| Block Win32 API calls from Office macros (ASR rule `92e97fa1-5d90-4c72-b1c2-b04d1b6ab7b7`) | Off, Audit, Warn, Block | Block if Office is installed, else Off | `Add-MpPreference` (ASR) |
-| Block Office communication apps (Outlook) from creating child processes (ASR rule `26190899-1602-49e8-8b27-eb1d0a1ce869`) | Off, Audit, Warn, Block | Block if Office is installed, else Off | `Add-MpPreference` (ASR) |
-| Block Adobe Reader from creating child processes (ASR rule `7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c`) | Off, Audit, Warn, Block | Block if Adobe Reader is installed, else Off | `Add-MpPreference` (ASR) |
+| Block Office applications from creating child processes (ASR rule `d4f940ab-401b-4efc-aadc-ad5f3c50688a`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Office applications from creating executable content (ASR rule `3b576869-a4ec-4529-8536-b80a7769e899`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Office applications from injecting code into other processes (ASR rule `75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Win32 API calls from Office macros (ASR rule `92e97fa1-5d90-4c72-b1c2-b04d1b6ab7b7`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Office communication apps (Outlook) from creating child processes (ASR rule `26190899-1602-49e8-8b27-eb1d0a1ce869`) | Off, Audit, Warn, Block | Block if Office is installed, else no change | `Add-MpPreference` (ASR) |
+| Block Adobe Reader from creating child processes (ASR rule `7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c`) | Off, Audit, Warn, Block | Block if Adobe Reader is installed, else no change | `Add-MpPreference` (ASR) |
 
 ### Exclusions tab
 
@@ -121,8 +122,8 @@ need to be installed.
 Values under `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender` (set by Group Policy, Intune or other
 configuration tools) take precedence over anything set with `Set-MpPreference`. On a domain-joined or
 MDM-managed PC, or one where another tool has written policy values, a change made here can appear to
-succeed and then be silently ignored. The tool checks the ASR, Scan and MpEngine policy keys, shows a red
-warning when values exist, and after Apply reports any setting whose readback does not match what you
+succeed and then be silently ignored. The tool checks the root Windows Defender policy key and its ASR,
+Scan and MpEngine subkeys, shows a red warning when values exist, and after Apply reports any setting whose readback does not match what you
 asked for. It never removes those policy values; that is a decision for whoever put them there.
 
 ## Why not ConfigureDefender?
