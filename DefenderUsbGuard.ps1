@@ -286,10 +286,9 @@ function Test-PolicyOverrides {
 
 function Protect-SnapshotDir {
     # %ProgramData% lets any local user create files and folders, so restrict our data folder
-    # (%ProgramData%\DefenderUsbGuard, the parent of snapshots) to Administrators and SYSTEM. The parent
-    # is what matters: whoever owns it can delete or replace the snapshots subfolder. The inheritable
-    # rules cover the subfolder and its files. Applied on every save, so a folder that already existed
-    # (possibly created by another user) is corrected too, including its owner.
+    # (%ProgramData%\DefenderUsbGuard) and the snapshots subfolder to Administrators and SYSTEM. Both
+    # need their owner replaced, not just their rules: a folder's owner can always rewrite its DACL, and
+    # either folder may have been pre-created by another user. Applied on every save.
     $admins = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
     $system = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
     $acl = New-Object Security.AccessControl.DirectorySecurity
@@ -298,7 +297,7 @@ function Protect-SnapshotDir {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule ($sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
     }
     $acl.SetOwner($admins)
-    Set-Acl -Path $AppDataDir -AclObject $acl
+    foreach ($dir in $AppDataDir, $SnapshotDir) { Set-Acl -Path $dir -AclObject $acl }
 }
 
 function Save-Snapshot([string]$Reason) {
