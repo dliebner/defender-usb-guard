@@ -122,8 +122,8 @@ need to be installed.
 Values under `HKLM\SOFTWARE\Policies\Microsoft\Windows Defender` (set by Group Policy, Intune or other
 configuration tools) take precedence over anything set with `Set-MpPreference`. On a domain-joined or
 MDM-managed PC, or one where another tool has written policy values, a change made here can appear to
-succeed and then be silently ignored. The tool checks the root Windows Defender policy key and its ASR,
-Scan and MpEngine subkeys, shows a red warning when values exist, and after Apply reports any setting whose readback does not match what you
+succeed and then be silently ignored. The tool checks the ASR, Scan and MpEngine policy keys, shows a red
+warning when values exist, and after Apply reports any setting whose readback does not match what you
 asked for. It never removes those policy values; that is a decision for whoever put them there.
 
 ## Why not ConfigureDefender?
@@ -160,9 +160,11 @@ few others, and you want to read every line of what runs, use this.
 
 Keys are the `Key` values from `$SettingDefs`; values are the option names shown in the window.
 
-The snapshot folder is created with permissions that allow only Administrators and SYSTEM to write to
-it, and those permissions are re-applied on every save, so another local user cannot plant or replace
-snapshots. Undo also lists every change it is about to make and asks for confirmation.
+The tool's data folder, `%ProgramData%\DefenderUsbGuard`, is created with permissions that allow only
+Administrators and SYSTEM to access it, and those permissions are re-applied on every save, so another
+local user cannot plant or replace snapshots. Because of this the folder shows "access denied" when
+opened in a normal Explorer window; Undo still works because the tool runs elevated. Undo also lists
+every change it is about to make and asks for confirmation.
 
 ## License
 

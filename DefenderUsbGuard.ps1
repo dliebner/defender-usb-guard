@@ -24,7 +24,8 @@
 
 $ErrorActionPreference = 'Stop'
 $AppName     = 'Defender USB Guard'
-$SnapshotDir = Join-Path $env:ProgramData 'DefenderUsbGuard\snapshots'
+$AppDataDir  = Join-Path $env:ProgramData 'DefenderUsbGuard'
+$SnapshotDir = Join-Path $AppDataDir 'snapshots'
 
 # ---------------------------------------------------------------------------------------------
 # Elevation and apartment state (WPF needs STA; powershell.exe is STA by default)
@@ -33,6 +34,13 @@ $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 $isAdmin  = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $isSta    = [Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA'
 if (-not $isAdmin -or -not $isSta) {
+    if ($env:DUG_RELAUNCHED -eq '1') {
+        # We are the relaunched process and still not elevated (or not STA): do not relaunch again.
+        Add-Type -AssemblyName PresentationFramework
+        [void][Windows.MessageBox]::Show("$AppName relaunched itself to get administrator rights, but the new process is still not an administrator. Nothing was changed.`n`nTry right-clicking Launch.cmd and choosing 'Run as administrator'.", $AppName, 'OK', 'Error')
+        exit 1
+    }
+    $env:DUG_RELAUNCHED = '1'   # inherited by the child process
     $relaunchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
     # Full path on purpose: a bare "powershell.exe" would be looked up in the current directory first.
     $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -261,8 +269,9 @@ function Get-CoreStatus($Pref) {
 
 function Test-PolicyOverrides {
     # Values under the Policies hive (Group Policy or other tools) override Set-MpPreference silently.
-    $keys = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender',
-            'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\ASR\Rules',
+    # The root Windows Defender policy key is deliberately not checked: OEM images often leave stray values
+    # there, and the readback after Apply reports any real override anyway.
+    $keys = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\ASR\Rules',
             'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Scan',
             'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine'
     $found = @()
@@ -276,9 +285,11 @@ function Test-PolicyOverrides {
 }
 
 function Protect-SnapshotDir {
-    # %ProgramData% lets any local user create files and folders, so restrict the snapshot folder to
-    # Administrators and SYSTEM. Applied on every save, so a folder that already existed (possibly created
-    # by another user) is corrected too, including its owner.
+    # %ProgramData% lets any local user create files and folders, so restrict our data folder
+    # (%ProgramData%\DefenderUsbGuard, the parent of snapshots) to Administrators and SYSTEM. The parent
+    # is what matters: whoever owns it can delete or replace the snapshots subfolder. The inheritable
+    # rules cover the subfolder and its files. Applied on every save, so a folder that already existed
+    # (possibly created by another user) is corrected too, including its owner.
     $admins = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
     $system = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
     $acl = New-Object Security.AccessControl.DirectorySecurity
@@ -287,7 +298,7 @@ function Protect-SnapshotDir {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule ($sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
     }
     $acl.SetOwner($admins)
-    Set-Acl -Path $SnapshotDir -AclObject $acl
+    Set-Acl -Path $AppDataDir -AclObject $acl
 }
 
 function Save-Snapshot([string]$Reason) {
@@ -653,7 +664,11 @@ $ui.BtnExclAddFolder.Add_Click({
     try {
         $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
         $dlg.Description = 'Choose a folder to exclude from ASR rules'
-        if ($dlg.ShowDialog() -eq 'OK') { Add-Exclusion $dlg.SelectedPath }
+        # Give the WinForms dialog our WPF window as owner so it opens in front of it.
+        $owner = New-Object System.Windows.Forms.NativeWindow
+        $owner.AssignHandle((New-Object System.Windows.Interop.WindowInteropHelper -ArgumentList $Window).Handle)
+        try { if ($dlg.ShowDialog($owner) -eq 'OK') { Add-Exclusion $dlg.SelectedPath } }
+        finally { $owner.ReleaseHandle() }
     } catch { Show-Error $_.Exception.Message }
 })
 $ui.BtnExclRemove.Add_Click({
