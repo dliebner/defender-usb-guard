@@ -41,7 +41,15 @@ by `tools/check_asr_docs.py`, which CI runs on every push and once a week.
 |---|---|---|---|
 | Block untrusted and unsigned processes that run from USB (ASR rule `b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4`) | Off, Audit, Warn, Block | Block | `Add-MpPreference -AttackSurfaceReductionRules_Ids ... -AttackSurfaceReductionRules_Actions ...` |
 | Scan removable drives during full scans | Off, On | On | `Set-MpPreference -DisableRemovableDriveScanning` |
-| AutoPlay for all drives | Windows default, Disabled | Disabled | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\NoDriveTypeAutoRun` = `0xFF` (removed for "Windows default") |
+| AutoPlay for all drives (drive letters; phones and cameras connected as media devices use a separate policy the tool leaves alone) | Windows default, Disabled | Disabled | `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\NoDriveTypeAutoRun` = `0xFF` (removed for "Windows default") |
+
+**What the USB rule does and does not cover.** In Microsoft's words, it prevents unsigned or untrusted
+executable files (.exe, .dll, .scr) from running from removable drives, and it also blocks those files
+from running after they have been copied to disk. It does not stop a shortcut on the drive from starting
+a signed Windows program, which is how some USB worms (Raspberry Robin, for example) chain `cmd.exe` and
+`msiexec.exe`; catching those is the job of Defender's regular antivirus and behaviour monitoring, which
+the Settings tab shows for reference. "Trusted" is a reputation decision, so keep cloud-delivered
+protection on; the tab shows it in red when it is off.
 
 ### Other low false-alarm protections
 
@@ -91,8 +99,10 @@ legitimate program you run from a USB drive is blocked by a rule.
 The **Settings** tab also shows, for reference only, whether real-time protection, behaviour monitoring,
 download/attachment scanning, script scanning, cloud-delivered protection and Tamper Protection are on,
 plus the security intelligence version. The tool never changes these. The **Activity** tab lists ASR
-block/audit events and malware detections from the Defender event log for the last 7, 30 or 90 days,
-with a per-rule filter and a "Hide LSASS events" box that is checked by default.
+block/audit events, malware detections and Defender settings changes (event 5007, made by any tool)
+from the Defender event log for the last 7, 30 or 90 days, with a per-rule filter and a "Hide LSASS
+events" box that is checked by default. Fields are read from the event text on English Windows and
+from the raw event properties on other languages.
 
 ## What it deliberately does not do
 
@@ -122,8 +132,8 @@ with a per-rule filter and a "Hide LSASS events" box that is checked by default.
    relaunches itself elevated.
 4. Press **Set all to recommended** (or pick values row by row), then **Apply...**. The tool lists
    exactly what will change and asks for confirmation before saving a snapshot and applying.
-5. **Reboot after applying ASR rules.** Rule changes made through `Add-MpPreference` are stored
-   immediately, but a restart makes sure Defender and every already-running process pick them up.
+5. **No reboot is needed.** ASR rule changes take effect immediately. If you changed the Office rules,
+   restart the Office applications; Microsoft notes the code-injection rule needs that.
 6. To revert, press **Undo...**, choose a snapshot, and confirm. A snapshot of the current state is
    saved first, so Undo itself can be undone.
 
@@ -149,9 +159,9 @@ tool. This project exists for people who want a narrower one they can read in fu
   hash, but you cannot read what it is about to do without decompiling it.
 - **Source lags several versions.** The source published in its repository has trailed the released
   binaries by several versions, so even the readable part is not necessarily what you are running.
-- **Unescaped exclusion paths.** Its exclusion handling has built PowerShell command lines from
-  user-supplied paths without escaping them. Defender USB Guard passes paths directly as cmdlet
-  arguments, so there is no command string for a path to break out of.
+- **Exclusion paths go through a command string.** Its exclusion feature builds PowerShell command
+  lines that include user-supplied paths. Defender USB Guard passes paths directly as cmdlet arguments,
+  so there is no command string for a path to break out of.
 
 If you need to manage dozens of Defender settings, use ConfigureDefender. If you need the USB rules and a
 few others, and you want to read every line of what runs, use this.
