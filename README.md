@@ -33,7 +33,8 @@ home or small-office PC from infected removable media.
 The groups below match the groups in the script and in the window. The rule GUIDs and the Warn-mode
 support claims are checked automatically against Microsoft's published
 [Attack surface reduction rules reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference)
-by `tools/check_asr_docs.py`, which CI runs on every push and once a week.
+by `tools/check_asr_docs.py`, which CI runs on every push and once a week. It reads the Learn page
+itself; the GitHub copy of the docs source it used at first was archived by Microsoft in September 2026.
 
 ### USB and removable media
 
